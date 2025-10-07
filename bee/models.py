@@ -1,7 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
-
+from django.db.models.signals import post_migrate
+from django.dispatch import receiver
+import uuid
+from datetime import timedelta
 # -----------------------------
 # Basic timestamped abstract
 # -----------------------------
@@ -16,19 +19,83 @@ class TimeStampedModel(models.Model):
 # -----------------------------
 # Custom User (extensible)
 # -----------------------------
+class Role(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+
 class User(AbstractUser, TimeStampedModel):
-    # username, email, password come from AbstractUser
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    full_name = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     dob = models.DateField(blank=True, null=True)
     gender = models.CharField(max_length=20, blank=True, null=True)
+    email = models.EmailField(unique=True, blank=False, null=False)
     is_seller = models.BooleanField(default=False)
-    # other flags
+    role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
-        return self.get_full_name() or self.username
+        return self.full_name or self.username
+
+    class Meta:
+        ordering = ['full_name', 'username']
+
+@receiver(post_migrate)
+def create_default_roles_and_user(sender, **kwargs):
+    """
+    Signal to create default roles and a default admin user with hashed password after migrations.
+    """
+    # Create default roles
+    roles = ['user', 'admin', 'seller']
+    for role_name in roles:
+        Role.objects.get_or_create(name=role_name)
+
+    # Create default admin user
+    admin_role = Role.objects.filter(name='admin').first()
+    if admin_role:
+        user, created = User.objects.get_or_create(
+            username='admin',
+            defaults={
+                'full_name': 'Admin',
+                'email': 'admin@example.com',
+                'gender': 'male',
+                'role': admin_role,
+                'is_active': True,
+                'is_staff': True,
+                'is_superuser': True,
+            }
+        )
+        if created:
+            user.set_password('123456')  # Hash and set the password
+            user.save()
+
+
+class OTP(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='otp')
+    otp_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"OTP for {self.user.email}"
+
+    def is_expired(self):
+        return timezone.now() > self.created_at + timedelta(minutes=5)
+
+    class Meta:
+        verbose_name = "OTP"
+        verbose_name_plural = "OTPs"
 
 
 class Address(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, related_name='addresses', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     address_line1 = models.CharField(max_length=500)
@@ -47,6 +114,7 @@ class Address(TimeStampedModel):
 # Catalog: Category -> Brand -> Product -> Variant
 # -----------------------------
 class Category(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
     parent = models.ForeignKey('self', related_name='children', on_delete=models.SET_NULL, blank=True, null=True)
@@ -57,6 +125,7 @@ class Category(TimeStampedModel):
 
 
 class Brand(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     logo = models.URLField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
@@ -66,6 +135,7 @@ class Brand(TimeStampedModel):
 
 
 class Product(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     seller = models.ForeignKey('Seller', related_name='products', on_delete=models.SET_NULL, blank=True, null=True)
     brand = models.ForeignKey(Brand, related_name='products', on_delete=models.SET_NULL, blank=True, null=True)
     category = models.ForeignKey(Category, related_name='products', on_delete=models.SET_NULL, blank=True, null=True)
@@ -85,12 +155,14 @@ class Product(TimeStampedModel):
 
 
 class ProductImage(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, related_name='images', on_delete=models.CASCADE)
     url = models.URLField()
     alt_text = models.CharField(max_length=255, blank=True, null=True)
 
 
 class ProductVariant(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, related_name='variants', on_delete=models.CASCADE)
     sku = models.CharField(max_length=200, unique=True)
     attributes = models.JSONField(blank=True, null=True)  # e.g. {"color":"red","ram":"8GB"}
@@ -108,6 +180,7 @@ class ProductVariant(TimeStampedModel):
 # Seller & Inventory
 # -----------------------------
 class Seller(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, related_name='seller_profile', on_delete=models.CASCADE)
     store_name = models.CharField(max_length=255)
     gst_number = models.CharField(max_length=50, blank=True, null=True)
@@ -123,6 +196,7 @@ class Seller(TimeStampedModel):
 
 
 class Warehouse(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     address = models.TextField()
     pincode = models.CharField(max_length=20)
@@ -133,6 +207,7 @@ class Warehouse(TimeStampedModel):
 
 
 class Inventory(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product_variant = models.ForeignKey(ProductVariant, related_name='inventories', on_delete=models.CASCADE)
     seller = models.ForeignKey(Seller, related_name='inventories', on_delete=models.CASCADE)
     warehouse = models.ForeignKey(Warehouse, related_name='inventories', on_delete=models.SET_NULL, blank=True, null=True)
@@ -148,10 +223,12 @@ class Inventory(TimeStampedModel):
 # Cart & Wishlist
 # -----------------------------
 class Cart(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, related_name='cart', on_delete=models.CASCADE)
 
 
 class CartItem(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     cart = models.ForeignKey(Cart, related_name='items', on_delete=models.CASCADE)
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
@@ -162,11 +239,13 @@ class CartItem(TimeStampedModel):
 
 
 class Wishlist(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, related_name='wishlists', on_delete=models.CASCADE)
     name = models.CharField(max_length=255, default='My Wishlist')
 
 
 class WishlistItem(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     wishlist = models.ForeignKey(Wishlist, related_name='items', on_delete=models.CASCADE)
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
 
@@ -178,6 +257,7 @@ class WishlistItem(TimeStampedModel):
 # Orders & Payments
 # -----------------------------
 class Order(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     STATUS_CHOICES = [
         ('PLACED', 'Placed'),
         ('CONFIRMED', 'Confirmed'),
@@ -204,6 +284,7 @@ class Order(TimeStampedModel):
 
 
 class OrderItem(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.SET_NULL, blank=True, null=True)
     seller = models.ForeignKey(Seller, related_name='order_items', on_delete=models.SET_NULL, blank=True, null=True)
@@ -214,6 +295,7 @@ class OrderItem(TimeStampedModel):
 
 
 class Payment(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     METHOD_CHOICES = [
         ('RAZORPAY', 'Razorpay'),
         ('CARD', 'Card'),
@@ -238,6 +320,7 @@ class Payment(TimeStampedModel):
 
 
 class Refund(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order = models.ForeignKey(Order, related_name='refunds', on_delete=models.CASCADE)
     payment = models.ForeignKey(Payment, related_name='refunds', on_delete=models.SET_NULL, blank=True, null=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -249,6 +332,7 @@ class Refund(TimeStampedModel):
 # Shipping & Delivery
 # -----------------------------
 class DeliveryAgent(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=30)
     vehicle_number = models.CharField(max_length=100, blank=True, null=True)
@@ -259,6 +343,7 @@ class DeliveryAgent(TimeStampedModel):
 
 
 class Shipment(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order = models.OneToOneField(Order, related_name='shipment', on_delete=models.CASCADE)
     tracking_number = models.CharField(max_length=255, blank=True, null=True)
     carrier_name = models.CharField(max_length=255, blank=True, null=True)
@@ -268,6 +353,7 @@ class Shipment(TimeStampedModel):
 
 
 class DeliveryLog(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     shipment = models.ForeignKey(Shipment, related_name='logs', on_delete=models.CASCADE)
     status = models.CharField(max_length=255)
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -278,6 +364,7 @@ class DeliveryLog(TimeStampedModel):
 # Reviews & Ratings
 # -----------------------------
 class ProductReview(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, related_name='reviews', on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name='product_reviews', on_delete=models.SET_NULL, blank=True, null=True)
     rating = models.PositiveSmallIntegerField()
@@ -287,6 +374,7 @@ class ProductReview(TimeStampedModel):
 
 
 class SellerReview(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     seller = models.ForeignKey(Seller, related_name='reviews', on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name='seller_reviews', on_delete=models.SET_NULL, blank=True, null=True)
     rating = models.PositiveSmallIntegerField()
@@ -297,6 +385,7 @@ class SellerReview(TimeStampedModel):
 # Promotions: Coupons, Offers, SuperCoins
 # -----------------------------
 class Coupon(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=100, unique=True)
     discount_type = models.CharField(max_length=20, choices=[('PERCENT','Percent'),('FLAT','Flat')])
     discount_value = models.DecimalField(max_digits=10, decimal_places=2)
@@ -307,17 +396,20 @@ class Coupon(TimeStampedModel):
 
 
 class AppliedCoupon(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, null=True)
 
 
 class SuperCoin(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, related_name='supercoin_wallet', on_delete=models.CASCADE)
     balance = models.BigIntegerField(default=0)
 
 
 class SuperCoinHistory(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ACTION_CHOICES = [
         ('EARN','Earn'),
         ('REDEEM','Redeem'),
@@ -334,6 +426,7 @@ class SuperCoinHistory(TimeStampedModel):
 # Support, Notifications & Analytics
 # -----------------------------
 class SupportTicket(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     STATUS = [('OPEN','Open'),('PENDING','Pending'),('RESOLVED','Resolved'),('CLOSED','Closed')]
     user = models.ForeignKey(User, related_name='tickets', on_delete=models.CASCADE)
     order = models.ForeignKey(Order, related_name='tickets', on_delete=models.SET_NULL, blank=True, null=True)
@@ -343,12 +436,14 @@ class SupportTicket(TimeStampedModel):
 
 
 class TicketReply(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ticket = models.ForeignKey(SupportTicket, related_name='replies', on_delete=models.CASCADE)
     sender_type = models.CharField(max_length=30)  # 'user' or 'support' or 'seller'
     message = models.TextField()
 
 
 class Notification(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, related_name='notifications', on_delete=models.CASCADE)
     title = models.CharField(max_length=255)
     message = models.TextField()
@@ -357,6 +452,7 @@ class Notification(TimeStampedModel):
 
 
 class PageView(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, related_name='page_views', on_delete=models.SET_NULL, blank=True, null=True)
     product = models.ForeignKey(Product, related_name='page_views', on_delete=models.SET_NULL, blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -365,12 +461,14 @@ class PageView(TimeStampedModel):
 
 
 class SearchLog(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, related_name='search_logs', on_delete=models.SET_NULL, blank=True, null=True)
     query = models.CharField(max_length=1000)
     timestamp = models.DateTimeField(auto_now_add=True)
 
 
 class ErrorLog(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     module = models.CharField(max_length=255)
     error_message = models.TextField()
     stack_trace = models.TextField(blank=True, null=True)
