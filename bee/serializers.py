@@ -3,6 +3,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import *
 import random
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model, authenticate
 
 User = get_user_model()
 
@@ -72,5 +74,49 @@ class VerifyOTPSerializer(serializers.Serializer):
         user.is_active = True
         user.save()
         otp_obj.delete()  
+
+        return data
+    
+    
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        email = data.get("email")
+        password = data.get("password")
+
+        try:
+            # Check if user exists
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Invalid email or password.")
+
+        # Verify password
+        if not user.check_password(password):
+            raise serializers.ValidationError("Invalid email or password.")
+
+        # Check if user is active
+        if not user.is_active:
+            raise serializers.ValidationError("User account is not active.")
+
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        access_token = refresh.access_token
+
+        # Add extra claims to access token
+        access_token["user_id"] = str(user.id)
+        access_token["email"] = user.email
+        access_token["full_name"] = user.full_name or ""
+        access_token["phone"] = user.phone or ""
+        access_token["dob"] = user.dob.isoformat() if user.dob else None
+        access_token["gender"] = user.gender or ""
+        access_token["is_seller"] = user.is_seller
+        access_token["role"] = user.role.name if user.role else None
+        access_token["profile_verified"] = True
+
+        data["user"] = user
+        data["refresh"] = str(refresh)
+        data["access"] = str(access_token)
 
         return data
