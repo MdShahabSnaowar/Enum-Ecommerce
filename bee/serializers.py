@@ -87,24 +87,24 @@ class LoginSerializer(serializers.Serializer):
         password = data.get("password")
 
         try:
-            # Check if user exists
+            
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             raise serializers.ValidationError("Invalid email or password.")
 
-        # Verify password
+        
         if not user.check_password(password):
             raise serializers.ValidationError("Invalid email or password.")
 
-        # Check if user is active
+        
         if not user.is_active:
             raise serializers.ValidationError("User account is not active.")
 
-        # Generate tokens
+        
         refresh = RefreshToken.for_user(user)
         access_token = refresh.access_token
 
-        # Add extra claims to access token
+        
         access_token["user_id"] = str(user.id)
         access_token["email"] = user.email
         access_token["full_name"] = user.full_name or ""
