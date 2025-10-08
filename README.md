@@ -45,3 +45,9 @@ python manage.py migrate
 Start the Django development server:
 
 python manage.py runserver
+
+7. Deactivate the Virtual Environment (when done)
+
+When you’re finished working on the project:
+
+deactivate
