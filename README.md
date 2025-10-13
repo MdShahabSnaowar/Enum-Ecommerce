@@ -51,3 +51,6 @@ python manage.py runserver
 When you’re finished working on the project:
 
 deactivate
+
+
+This command is not for you Akib = pip freeze > requirements.txt
