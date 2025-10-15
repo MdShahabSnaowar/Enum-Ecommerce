@@ -1,12 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer, VerifyOTPSerializer, LoginSerializer
+from .serializers import RegisterSerializer, VerifyOTPSerializer, LoginSerializer,UserProfileSerializer
 from datetime import timedelta
 from django.shortcuts import redirect
 from django.http import JsonResponse
 from rest_framework_simplejwt.tokens import RefreshToken
 import requests
+from rest_framework.permissions import IsAuthenticated
 from .models import *
 import os
 
@@ -196,3 +197,18 @@ def google_callback(request):
     except Exception as e:
         print("Google login error:", str(e))
         return JsonResponse({"error": "Google authentication failed"}, status=400)
+
+
+
+class MyProfileView(APIView):
+    permission_classes = [IsAuthenticated]  # ensures token validated by JWTAuthentication
+
+    def get(self, request):
+        user = request.user
+        serializer = UserProfileSerializer(user)
+        return Response({
+            "message": "User profile fetched successfully.",
+            "meta": serializer.data,
+            "error": True,
+            
+        })

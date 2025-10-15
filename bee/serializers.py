@@ -120,3 +120,13 @@ class LoginSerializer(serializers.Serializer):
         data["access"] = str(access_token)
 
         return data
+    
+    
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "id", "username", "full_name", "email", "phone",
+            "dob", "gender", "is_seller", "role"
+        ]
+        read_only_fields = fields
