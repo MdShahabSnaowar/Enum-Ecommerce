@@ -130,3 +130,52 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "dob", "gender", "is_seller", "role"
         ]
         read_only_fields = fields
+        
+        
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = '__all__'
+
+
+class BrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Brand
+        fields = '__all__'
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = '__all__'
+
+
+class VariantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Variant
+        fields = '__all__'
+
+
+class WarehouseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Warehouse
+        fields = '__all__'
+
+
+class InventorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Inventory
+        fields = '__all__'
+
+
+class PurchaseOrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseOrder
+        fields = '__all__'
+
+
+class PurchaseOrderItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseOrderItem
+        fields = '__all__'

@@ -64,6 +64,7 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # 'bee.middleware.AdminAccessMiddleware',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
