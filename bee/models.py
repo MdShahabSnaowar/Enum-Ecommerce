@@ -39,6 +39,7 @@ class User(AbstractUser, TimeStampedModel):
     gender = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(unique=True, blank=False, null=False)
     is_seller = models.BooleanField(default=False)
+    profile_verified = models.BooleanField(default=False)
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):

@@ -15,63 +15,137 @@ from . serializers import *
 import os
 
 class RegisterAPIView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
+        email = request.data.get("email")
+
+        # ✅ Check if user already exists
+        existing_user = User.objects.filter(email=email).first()
+
+        if existing_user:
+            if existing_user.profile_verified:
+                # Already verified user
+                return Response(
+                    {
+                        "message": "User already registered and verified.",
+                        "meta": {"email": existing_user.email},
+                        "error": True,
+                    },
+                    status=status.HTTP_200_OK
+                )
+            else:
+                # ✅ Re-send OTP logic (you can reuse your existing OTP send function)
+                # send_otp_to_email(existing_user.email)
+                return Response(
+                    {
+                        "message": "User already exists but not verified. OTP re-sent to email.",
+                        "meta": {"email": existing_user.email},
+                        "error": False,
+                    },
+                    status=status.HTTP_200_OK
+                )
+
+        # ✅ If no user exists — create a new one
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            # send_otp_to_email(user.email)
             return Response(
                 {
-                    
-                    "message": "User registered. OTP sent to email.",
+                    "message": "User registered successfully. OTP sent to email.",
                     "meta": {
-                        
-                            "user_id": str(user.id),
-                            "email": user.email,
-                            "full_name": user.full_name
-                        
+                        "user_id": str(user.id),
+                        "email": user.email,
+                        "full_name": user.full_name
                     },
                     "error": False
                 },
                 status=status.HTTP_201_CREATED
             )
+
         return Response(
             {
-                
                 "message": serializer.errors,
-                "meta": {
-                    
-                },
+                "meta": {},
                 "error": True,
             },
             status=status.HTTP_400_BAD_REQUEST
         )
 
+
 class VerifyOTPAPIView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
         if serializer.is_valid():
-            return Response(
+            email = serializer.validated_data['email']
+
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response(
+                    {"error": True, "message": "User not found.", "meta": {}},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # ✅ Mark user verified
+            user.is_active = True
+            user.profile_verified = True
+            user.save()
+
+            # ✅ Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
+            refresh_token = str(refresh)
+
+            # ✅ Prepare response
+            response = Response(
                 {
                     "error": False,
-                    "message": "OTP verified. User activated.",
+                    "message": "OTP verified successfully. User activated.",
                     "meta": {
-                        "data": {
-                            "email": serializer.validated_data['email']
-                        }
-                    }
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
+                        "user_id": str(user.id),
+                        "email": user.email,
+                        "full_name": user.full_name or '',
+                    },
                 },
                 status=status.HTTP_200_OK
             )
+
+            # ✅ Set cookies
+            response.set_cookie(
+                key='access_token',
+                value=access_token,
+                max_age=timedelta(minutes=60).total_seconds(),
+                secure=False,  # True in production
+                httponly=True,
+                samesite='None'
+            )
+            response.set_cookie(
+                key='refresh_token',
+                value=refresh_token,
+                max_age=timedelta(days=1).total_seconds(),
+                secure=False,
+                httponly=True,
+                samesite='None'
+            )
+
+            return response
+
         return Response(
             {
                 "error": True,
                 "message": "OTP verification failed.",
-                "meta": {
-                    "data": serializer.errors
-                }
+                "meta": {"data": serializer.errors}
             },
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
 
 class LoginAPIView(APIView):
     authentication_classes = []  # Disable token auth
@@ -107,17 +181,17 @@ class LoginAPIView(APIView):
                 key='access_token',
                 value=access_token,
                 max_age=timedelta(minutes=60).total_seconds(),  
-                secure=True,  
+                secure=False,  
                 httponly=True, 
-                samesite='Lax'  
+                samesite='None'
             )
             response.set_cookie(
                 key='refresh_token',
                 value=refresh_token,
                 max_age=timedelta(days=1).total_seconds(),  
-                secure=True,
+                secure=False,
                 httponly=True,
-                samesite='Lax'
+                samesite='None'
             )
 
             return response

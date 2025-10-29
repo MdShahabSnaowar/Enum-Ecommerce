@@ -78,7 +78,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5273"
 ]
-
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SECURE = False  # True only in production with HTTPS
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
